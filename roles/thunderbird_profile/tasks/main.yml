@@ -1,0 +1,141 @@
+---
+# =====================================================================
+# 1. Définition des chemins de base
+# =====================================================================
+
+- name: 1.1 Définir le répertoire Thunderbird
+  set_fact:
+    thunderbird_dir: "{{ lookup('env','HOME') }}/.thunderbird"
+
+# =====================================================================
+# 2. Détection du profil existant (mode normal)
+# =====================================================================
+
+- block:
+
+    - name: 2.1 Lire profiles.ini
+      slurp:
+        src: "{{ thunderbird_dir }}/profiles.ini"
+      register: profiles_ini_raw
+
+    - name: 2.2 Convertir profiles.ini en texte
+      set_fact:
+        tb_profiles_ini: "{{ profiles_ini_raw.content | b64decode }}"
+
+    - name: 2.3 Extraire le nom du profil par défaut
+      set_fact:
+        thunderbird_profile_path: "{{ tb_profiles_ini | regex_search('Path=(.*)', '\\1') | first }}"
+
+    - name: 2.4 Définir le chemin complet du profil Thunderbird
+      set_fact:
+        thunderbird_profile_dir: "{{ thunderbird_dir }}/{{ thunderbird_profile_path }}"
+
+  when: not thunderbird_force_reset
+
+# =====================================================================
+# 3. Définition du profil cible (mode reset forcé)
+# =====================================================================
+
+- name: 3.1 Définir le profil modèle en mode reset
+  set_fact:
+    thunderbird_profile_dir: "{{ thunderbird_dir }}/default-release"
+  when: thunderbird_force_reset
+
+- name: 3.2 Afficher le profil utilisé
+  debug:
+    msg: "Profil utilisé : {{ thunderbird_profile_dir }}"
+
+# =====================================================================
+# 4. Sauvegarde automatique avant reset forcé
+# =====================================================================
+
+- name: 4.1 Vérifier si ~/.thunderbird existe
+  stat:
+    path: "{{ thunderbird_dir }}"
+  register: tb_existing_dir
+  when: thunderbird_force_reset | bool
+
+- name: 4.2 Vérifier si profiles.ini existe (profil réel)
+  stat:
+    path: "{{ thunderbird_dir }}/profiles.ini"
+  register: tb_has_profiles_ini
+  when: thunderbird_force_reset | bool
+
+- name: 4.3 Créer le répertoire de sauvegarde (si nécessaire)
+  file:
+    path: "{{ thunderbird_dir }}_backup"
+    state: directory
+    mode: "0700"
+  when: thunderbird_force_reset and tb_existing_dir.stat.exists and tb_has_profiles_ini.stat.exists
+
+- name: 4.4 Sauvegarder le profil existant (rsync)
+  synchronize:
+    src: "{{ thunderbird_dir }}/"
+    dest: "{{ thunderbird_dir }}_backup/{{ lookup('pipe', 'date +%Y%m%d-%H%M%S') }}/"
+    recursive: yes
+    delete: no
+  delegate_to: localhost
+  when: thunderbird_force_reset and tb_existing_dir.stat.exists and tb_has_profiles_ini.stat.exists
+
+- name: 4.5 Afficher le message de sauvegarde
+  debug:
+    msg: "Profil Thunderbird sauvegardé dans {{ thunderbird_dir }}_backup/"
+  when: thunderbird_force_reset and tb_existing_dir.stat.exists and tb_has_profiles_ini.stat.exists
+
+# =====================================================================
+# 5. Réinitialisation du profil (mode reset forcé)
+# =====================================================================
+
+- name: 5.1 Supprimer ~/.thunderbird si reset forcé
+  file:
+    path: "{{ thunderbird_dir }}"
+    state: absent
+  when: thunderbird_force_reset | bool
+
+- name: 5.2 Recréer ~/.thunderbird
+  file:
+    path: "{{ thunderbird_dir }}"
+    state: directory
+    mode: "0700"
+
+# =====================================================================
+# 6. Installation des fichiers de configuration
+# =====================================================================
+
+- name: 6.1 Installer profiles.ini
+  copy:
+    src: profiles.ini
+    dest: "{{ thunderbird_dir }}/profiles.ini"
+    mode: "0600"
+
+- name: 6.2 Installer installs.ini
+  copy:
+    src: installs.ini
+    dest: "{{ thunderbird_dir }}/installs.ini"
+    mode: "0600"
+
+# =====================================================================
+# 7. Installation du profil modèle (idempotent)
+# =====================================================================
+
+- name: 7.1 Créer le répertoire du profil s'il n'existe pas
+  file:
+    path: "{{ thunderbird_profile_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: 7.2 Synchroniser le profil modèle (idempotent)
+  synchronize:
+    src: "{{ role_path }}/files/thunderbird_profile/default-release/"
+    dest: "{{ thunderbird_profile_dir }}/"
+    recursive: yes
+    delete: no
+  delegate_to: localhost
+
+# =====================================================================
+# 8. Fin
+# =====================================================================
+
+- name: 8.1 Message final
+  debug:
+    msg: "Profil Thunderbird ESR installé proprement dans {{ thunderbird_profile_dir }}"

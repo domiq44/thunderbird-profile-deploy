@@ -1,0 +1,18 @@
+# Profils Thunderbird
+.thunderbird*
+**/default-release/
+**/*.sqlite*
+**/*.json*
+**/*.dat
+**/*.bin
+**/prefs.js
+**/encrypted-openpgp*
+**/calendar-data/
+**/storage/
+
+# Ansible
+*.retry
+
+# Temp
+*.swp
+*~

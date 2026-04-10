@@ -1,0 +1,3 @@
+[postes_fedora]
+localhost ansible_connection=local
+

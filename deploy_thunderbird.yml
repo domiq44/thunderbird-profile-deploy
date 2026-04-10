@@ -1,0 +1,7 @@
+---
+- name: Déployer le profil Thunderbird modèle
+  hosts: postes_fedora
+  become: false
+  roles:
+    - thunderbird_profile
+
